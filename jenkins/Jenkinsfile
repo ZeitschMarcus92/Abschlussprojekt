@@ -20,14 +20,22 @@ pipeline {
         sh 'scripts/build.sh $TARGET'
       }
     }
-    stage('Docker & Push'){
-      steps {
-        withCredentials([usernamePassword(credentialsId: env.CREDS_ID, usernameVariable: 'U', passwordVariable: 'P')]){
-
-          sh 'scripts/push.sh $TARGET "$REGISTRY" "$IMG_BE" "$IMG_FE" "$U" "$P"'
-        }
-      }
+   stage('Docker & Push') {
+  steps {
+    withCredentials([usernamePassword(
+      credentialsId: env.CREDS_ID,
+      usernameVariable: 'DH_USER',
+      passwordVariable: 'DH_PASS'
+    )]) {
+      sh """
+        scripts/push.sh ${params.TARGET} \
+          docker.io/${DH_USER} \
+          docker.io/${DH_USER}/app-backend \
+          docker.io/${DH_USER}/app-frontend
+      """
     }
+  }
+}
     stage('Deploy'){
       steps {
         script {
