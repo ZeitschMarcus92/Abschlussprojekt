@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-backend
+  namespace: marcuszeitsch-dev
+spec:
+  selector:
+    app: app-backend
+  ports:
+    - port: 8080
+      targetPort: 8080

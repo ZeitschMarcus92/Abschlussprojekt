@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: marcuszeitsch-prod
+data:
+  BACKEND_URL: "http://app-backend.marcuszeitsch-prod.svc.cluster.local:8080"

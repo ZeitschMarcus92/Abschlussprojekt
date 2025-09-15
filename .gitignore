@@ -1,0 +1,12 @@
+.DS_Store
+.idea
+.vscode
+node_modules
+dist
+target
+.mvn
+**/*.log
+**/.env
+k8s/**/rendered-*.yaml
+*.kubeconfig
+*.secret
