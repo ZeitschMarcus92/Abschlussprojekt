@@ -1,52 +1,60 @@
 pipeline {
   agent any
+
   environment {
-    REGISTRY     = 'docker.io/zeitschmarcus92'
-    CREDS_ID     = 'registry-creds'     
-    KCFG_DEV     = 'kubeconfig-dev'    
-    KCFG_PROD    = 'kubeconfig-prod'    
-    IMG_BE       = "${REGISTRY}/app-backend"
-    IMG_FE       = "${REGISTRY}/app-frontend"
+    DOCKERHUB_HOST = 'docker.io'
+    DOCKERHUB_USER = 'zeitschmarcus92'
+    REGISTRY       = "${DOCKERHUB_HOST}/${DOCKERHUB_USER}"
+
+    CREDS_ID = 'registry-creds'
+
+    KCFG_DEV  = 'kubeconfig-dev'
+    KCFG_PROD = 'kubeconfig-prod'
+
+    IMG_BE = "${REGISTRY}/app-backend"
+    IMG_FE = "${REGISTRY}/app-frontend"
   }
+
   parameters {
     choice(name: 'TARGET', choices: ['dev','prod'], description: 'Zielumgebung')
   }
+
   stages {
-    stage('Checkout'){
+
+    stage('Checkout') {
       steps { checkout scm }
     }
-    stage('Build & Test'){
+
+    stage('Build & Test') {
+      steps { sh 'scripts/build.sh $TARGET' }
+    }
+
+    stage('Docker & Push') {
       steps {
-        sh 'scripts/build.sh $TARGET'
+        withCredentials([usernamePassword(
+          credentialsId: env.CREDS_ID,
+          usernameVariable: 'DH_USER',
+          passwordVariable: 'DH_PASS'
+        )]) {
+          sh """
+            bash scripts/push.sh \
+              "$TARGET" \
+              "$DOCKERHUB_HOST" \
+              "$IMG_BE" \
+              "$IMG_FE" \
+              "$DH_USER" \
+              "$DH_PASS"
+          """
+        }
       }
     }
-  stage('Docker & Push') {
-  steps {
-    withCredentials([usernamePassword(
-  credentialsId: 'dockerhub-creds',
-  usernameVariable: 'DH_USER',
-  passwordVariable: 'DH_PASS'
-)]) {
-  sh """
-    bash scripts/push.sh \
-      dev \
-      docker.io \
-      docker.io/${DH_USER}/app-backend \
-      docker.io/${DH_USER}/app-frontend \
-      ${DH_USER} \
-      ${DH_PASS}
-  """
-}
 
-  }
-}
-
-    stage('Deploy'){
+    stage('Deploy') {
       steps {
         script {
           if (params.TARGET == 'dev') {
             withCredentials([file(credentialsId: env.KCFG_DEV, variable: 'K')]) {
-              sh 'KUBECONFIG="$K" scripts/deploy.sh dev  "${IMG_BE}:${GIT_COMMIT}" "${IMG_FE}:${GIT_COMMIT}"'
+              sh 'KUBECONFIG="$K" scripts/deploy.sh dev "${IMG_BE}:${GIT_COMMIT}" "${IMG_FE}:${GIT_COMMIT}"'
             }
             input 'Promote to PROD?'
             withCredentials([file(credentialsId: env.KCFG_PROD, variable: 'K')]) {
