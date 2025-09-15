@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 PROFILE="${1:-dev}"
-REGISTRY="${2:-docker.io}"
-IMG_BE="${3:?missing backend image name}"
-IMG_FE="${4:?missing frontend image name}"
-USER="${5:-${DH_USER:-}}"
-PASS="${6:-${DH_PASS:-}}"
+REGISTRY="$2"
+IMG_BE="$3"
+IMG_FE="$4"
+USER="$5"
+PASS="$6"
 
-if [[ -z "${USER}" || -z "${PASS}" ]]; then
-  echo "ERROR: Docker Hub USER/PASS fehlen (Args 5/6 oder DH_USER/DH_PASS)." >&2
-  exit 1
-fi
+echo "${PASS}" | docker login "${REGISTRY}" -u "${USER}" --password-stdin
 
-docker build --build-arg PROFILE="$PROFILE" -t "${IMG_BE}:${GIT_COMMIT}" backend
+docker pull maven:3.9.6-eclipse-temurin-17 || true
+docker pull eclipse-temurin:17-jre || true
+docker pull node:18 || true
+docker pull nginx:alpine || true
+
+docker build --build-arg PROFILE="${PROFILE}" -t "${IMG_BE}:${GIT_COMMIT}" backend
 docker build -t "${IMG_FE}:${GIT_COMMIT}" frontend
-echo "$PASS" | docker login "$REGISTRY" -u "$USER" --password-stdin
+
 docker push "${IMG_BE}:${GIT_COMMIT}"
 docker push "${IMG_FE}:${GIT_COMMIT}"
+docker logout "${REGISTRY}" || true

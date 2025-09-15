@@ -29,27 +29,19 @@ pipeline {
       steps { sh 'scripts/build.sh $TARGET' }
     }
 
-   stage('Docker & Push') {
+stage('Docker & Push') {
   steps {
     withCredentials([usernamePassword(
       credentialsId: 'registry-creds',   
       usernameVariable: 'DH_USER',
       passwordVariable: 'DH_PASS'
     )]) {
-      sh '''#!/bin/bash
-set -euo pipefail
-bash scripts/push.sh \
-  "$TARGET" \
-  "docker.io" \
-  "docker.io/${DH_USER}/app-backend" \
-  "docker.io/${DH_USER}/app-frontend" \
-  "$DH_USER" \
-  "$DH_PASS"
-docker logout docker.io || true
-'''
+    
+      sh 'bash scripts/push.sh "$TARGET" docker.io "$IMG_BE" "$IMG_FE" "$DH_USER" "$DH_PASS"'
     }
   }
 }
+
 
 
     stage('Deploy') {
