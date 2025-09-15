@@ -23,17 +23,21 @@ pipeline {
   stage('Docker & Push') {
   steps {
     withCredentials([usernamePassword(
-      credentialsId: env.CREDS_ID,
-      usernameVariable: 'DH_USER',
-      passwordVariable: 'DH_PASS'
-    )]) {
-      sh """
-        scripts/push.sh ${params.TARGET} \
-          docker.io \
-          docker.io/${DH_USER}/app-backend \
-          docker.io/${DH_USER}/app-frontend
-      """
-    }
+  credentialsId: 'dockerhub-creds',
+  usernameVariable: 'DH_USER',
+  passwordVariable: 'DH_PASS'
+)]) {
+  sh """
+    bash scripts/push.sh \
+      dev \
+      docker.io \
+      docker.io/${DH_USER}/app-backend \
+      docker.io/${DH_USER}/app-frontend \
+      ${DH_USER} \
+      ${DH_PASS}
+  """
+}
+
   }
 }
 
