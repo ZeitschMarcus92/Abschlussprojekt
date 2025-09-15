@@ -1,5 +1,5 @@
-
-set -euo pipefail
+#!/usr/bin/env bash
+set -eu
 
 PROFILE="${1:-dev}"
 REGISTRY="${2:-docker.io}"
