@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app-backend
-  namespace: marcuszeitsch-dev
+  namespace: marcuszeitsch-prod
 spec:
   replicas: 1
   revisionHistoryLimit: 3
