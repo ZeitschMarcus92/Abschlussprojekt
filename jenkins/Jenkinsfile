@@ -1,96 +1,121 @@
 pipeline {
   agent any
   options { timestamps() }
+
   environment {
     REG    = 'ghcr.io/zeitschmarcus92'
     IMG_BE = "${REG}/kukuk-app-backend"
     IMG_FE = "${REG}/kukuk-app-frontend"
   }
+
   stages {
-    stage('Checkout') { steps { checkout scm } }
+    stage('Checkout') {
+      steps { checkout scm }
+    }
 
     stage('Build') {
       parallel {
-        stage('Backend') { steps { sh 'cd backend && mvn -B -Dmaven.test.skip=true clean package' } }
-        stage('Frontend'){ steps { sh 'cd frontend && npm ci && npm run build' } }
+        stage('Backend')  { steps { sh 'cd backend && mvn -B -Dmaven.test.skip=true clean package' } }
+        stage('Frontend') { steps { sh 'cd frontend && npm ci && npm run build' } }
       }
     }
 
-   stage('Docker build & push') {
-  steps {
-    withCredentials([usernamePassword(credentialsId: 'ghcr-creds',
-  usernameVariable: 'GH_USER', passwordVariable: 'GH_PASS')]) {
-  sh '''
-    echo "$GH_PASS" | docker login ghcr.io -u "$GH_USER" --password-stdin
-    GIT_SHA=$(git rev-parse --short HEAD)
-    docker build -t $IMG_BE:dev-$GIT_SHA backend
-    docker build -t $IMG_FE:dev-$GIT_SHA frontend
-    docker push  $IMG_BE:dev-$GIT_SHA
-    docker push  $IMG_FE:dev-$GIT_SHA
-    BE=$(docker inspect $IMG_BE:dev-$GIT_SHA --format '{{index .RepoDigests 0}}')
-    FE=$(docker inspect $IMG_FE:dev-$GIT_SHA --format '{{index .RepoDigests 0}}')
-    echo "BE=$BE" > digests.env; echo "FE=$FE" >> digests.env
-  '''
-}
-    archiveArtifacts 'digests.env'
-  }
-}
+    stage('Docker build & push') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'ghcr-creds',
+          usernameVariable: 'GH_USER',
+          passwordVariable: 'GH_PASS'
+        )]) {
+          sh '''
+            set -e
+            echo "$GH_PASS" | docker login ghcr.io -u "$GH_USER" --password-stdin
+
+            GIT_SHA=$(git rev-parse --short HEAD)
+
+            docker build -t $IMG_BE:dev-$GIT_SHA backend
+            docker build -t $IMG_FE:dev-$GIT_SHA frontend
+
+            docker push  $IMG_BE:dev-$GIT_SHA
+            docker push  $IMG_FE:dev-$GIT_SHA
+
+            BE=$(docker inspect $IMG_BE:dev-$GIT_SHA --format '{{index .RepoDigests 0}}')
+            FE=$(docker inspect $IMG_FE:dev-$GIT_SHA --format '{{index .RepoDigests 0}}')
+            echo "BE=$BE" > digests.env
+            echo "FE=$FE" >> digests.env
+          '''
+        }
+        archiveArtifacts artifacts: 'digests.env', fingerprint: true
+      }
+    }
 
     stage('Deploy DEV') {
-  steps {
-    withCredentials([
-      file(credentialsId: 'KUBECONFIG_FILE', variable: 'KCFG'),
-      usernamePassword(credentialsId: 'registry-creds', usernameVariable: 'GH_USER', passwordVariable: 'GH_PASS')
-    ]) {
-      sh '''
-        set -e; . digests.env; export KUBECONFIG="$KCFG"
+      steps {
+        withCredentials([
+          file(credentialsId: 'kubeconfig-dev',  variable: 'KCFG'),
+          usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'GH_USER', passwordVariable: 'GH_PASS')
+        ]) {
+          sh '''
+            set -e
+            . ./digests.env
+            export KUBECONFIG="$KCFG"
 
-        kubectl -n marcuszeitsch-dev create secret docker-registry ghcr-creds \
-          --docker-server=ghcr.io --docker-username="$GH_USER" \
-          --docker-password="$GH_PASS" --docker-email=you@example.com || true
+            # imagePullSecret (idempotent)
+            kubectl -n marcuszeitsch-dev create secret docker-registry ghcr-creds \
+              --docker-server=ghcr.io \
+              --docker-username="$GH_USER" \
+              --docker-password="$GH_PASS" \
+              --docker-email=you@example.com || true
 
-        kubectl -n marcuszeitsch-dev patch deploy app-backend  --type=json \
-          -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
-        kubectl -n marcuszeitsch-dev patch deploy app-frontend --type=json \
-          -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
+            # ensure secret is referenced + always pull new image
+            kubectl -n marcuszeitsch-dev patch deploy app-backend  --type=json \
+              -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
+            kubectl -n marcuszeitsch-dev patch deploy app-frontend --type=json \
+              -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
 
-        kubectl -n marcuszeitsch-dev set image deploy/app-backend  app-backend="$BE"
-        kubectl -n marcuszeitsch-dev set image deploy/app-frontend app-frontend="$FE"
+            # update images by digest
+            kubectl -n marcuszeitsch-dev set image deploy/app-backend  app-backend="$BE"
+            kubectl -n marcuszeitsch-dev set image deploy/app-frontend app-frontend="$FE"
 
-        kubectl -n marcuszeitsch-dev rollout status deploy/app-backend
-        kubectl -n marcuszeitsch-dev rollout status deploy/app-frontend
-      '''
+            kubectl -n marcuszeitsch-dev rollout status deploy/app-backend
+            kubectl -n marcuszeitsch-dev rollout status deploy/app-frontend
+          '''
+        }
+      }
     }
-  }
-}
 
+    stage('Promote to PROD?') {
+      steps { input 'Proceed to PROD?' }
+    }
 
-    stage('Promote to PROD?') { steps { input 'Proceed to PROD?' } }
+    stage('Deploy PROD') {
+      steps {
+        withCredentials([
+          file(credentialsId: 'kubeconfig-prod', variable: 'KCFG'),
+          usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'GH_USER', passwordVariable: 'GH_PASS')
+        ]) {
+          sh '''
+            set -e
+            . ./digests.env
+            export KUBECONFIG="$KCFG"
 
-   stage('Deploy PROD') {
-  steps {
-    withCredentials([
-      file(credentialsId: 'KUBECONFIG_FILE', variable: 'KCFG'),
-      usernamePassword(credentialsId: 'registry-creds', usernameVariable: 'GH_USER', passwordVariable: 'GH_PASS')
-    ]) {
-      sh '''
-        set -e; . digests.env; export KUBECONFIG="$KCFG"
+            kubectl -n marcuszeitsch-prod create secret docker-registry ghcr-creds \
+              --docker-server=ghcr.io \
+              --docker-username="$GH_USER" \
+              --docker-password="$GH_PASS" \
+              --docker-email=you@example.com || true
 
-        kubectl -n marcuszeitsch-prod create secret docker-registry ghcr-creds \
-          --docker-server=ghcr.io --docker-username="$GH_USER" \
-          --docker-password="$GH_PASS" --docker-email=you@example.com || true
+            kubectl -n marcuszeitsch-prod patch deploy app-backend  --type=json \
+              -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
+            kubectl -n marcuszeitsch-prod patch deploy app-frontend --type=json \
+              -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
 
-        kubectl -n marcuszeitsch-prod patch deploy app-backend  --type=json \
-          -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
-        kubectl -n marcuszeitsch-prod patch deploy app-frontend --type=json \
-          -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-creds"}]},{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"Always"}]' || true
+            kubectl -n marcuszeitsch-prod set image deploy/app-backend  app-backend="$BE"
+            kubectl -n marcuszeitsch-prod set image deploy/app-frontend app-frontend="$FE"
 
-        kubectl -n marcuszeitsch-prod set image deploy/app-backend  app-backend="$BE"
-        kubectl -n marcuszeitsch-prod set image deploy/app-frontend app-frontend="$FE"
-
-        kubectl -n marcuszeitsch-prod rollout status deploy/app-backend
-        kubectl -n marcuszeitsch-prod rollout status deploy/app-frontend
-      '''
+            kubectl -n marcuszeitsch-prod rollout status deploy/app-backend
+            kubectl -n marcuszeitsch-prod rollout status deploy/app-frontend
+          '''
         }
       }
     }
