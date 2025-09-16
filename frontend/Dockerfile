@@ -1,17 +1,11 @@
-
-FROM node:18 AS build
+FROM node:20 AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci || npm install
+RUN npm install
 COPY . .
+RUN npm run build
 
-RUN npm run build || true \
- && if [ -d build ]; then mv build dist; \
-    elif [ -d public ]; then cp -r public dist; \
-    elif [ -d src ]; then mkdir -p dist && cp -r src/* dist/; \
-    else mkdir -p dist && echo '<h1>Kukuk Frontend</h1>' > dist/index.html; fi
-
-FROM nginx:alpine
-COPY --from=build /app/dist/ /usr/share/nginx/html
+FROM nginx:1.25-alpine
+COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 80
-CMD ["nginx","-g","daemon off;"]
+CMD ["nginx", "-g", "daemon off;"]
