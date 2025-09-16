@@ -5,6 +5,7 @@ metadata:
   namespace: marcuszeitsch-dev
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: app-frontend
@@ -14,13 +15,29 @@ spec:
         app: app-frontend
     spec:
       imagePullSecrets:
-        - name: ghcr-pull
+        - name: ghcr-creds
       containers:
         - name: app-frontend
           image: ghcr.io/zeitschmarcus92/kukuk-app-frontend:dev
           imagePullPolicy: Always
           ports:
             - containerPort: 80
+readinessProbe:
+  httpGet:
+    path: /
+    port: 80
+  initialDelaySeconds: 2
+  periodSeconds: 5
+  timeoutSeconds: 1
+  failureThreshold: 3
+livenessProbe:
+  httpGet:
+    path: /
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 1
+  failureThreshold: 3
           env:
             - name: BACKEND_URL
               valueFrom:
