@@ -14,7 +14,7 @@ pipeline {
     IMG_BE = "${REGISTRY}/app-backend"
     IMG_FE = "${REGISTRY}/app-frontend"
   }
-
+  
   parameters {
     choice(name: 'TARGET', choices: ['dev','prod'], description: 'Zielumgebung')
   }
@@ -41,9 +41,6 @@ stage('Docker & Push') {
     }
   }
 }
-
-
-
     stage('Deploy') {
       steps {
         script {
