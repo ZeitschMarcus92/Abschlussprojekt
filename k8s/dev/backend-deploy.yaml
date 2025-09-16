@@ -15,18 +15,10 @@ spec:
     spec:
       containers:
         - name: app-backend
-          image: ghcr.io/zeitschmarcus92/kukuk-app-backend:dev
+          image: ghcr.io/zeitschmarcus92/kukuk-app-backend:dev-latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 20
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "dev"
